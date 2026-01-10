@@ -41,30 +41,58 @@ class UsageLimitsParser:
     @staticmethod
     def run_usage_command() -> str:
         """
-        Run the `claude /usage` command and capture output.
+        Get usage data by running 'claude /usage' interactively via pexpect.
 
         Returns:
             Command output as string
         """
         try:
-            # Run claude command non-interactively
-            # We need to send /usage followed by Escape to exit
-            result = subprocess.run(
-                ["claude"],
-                input="/usage\n\x1b",  # /usage command + Escape key
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            return result.stdout + result.stderr
-        except subprocess.TimeoutExpired:
-            print("⚠️  Command timed out")
-            return ""
-        except FileNotFoundError:
-            print("❌ 'claude' command not found in PATH")
-            return ""
+            import pexpect
+            import os
+            import time
+
+            # Spawn interactive claude session
+            child = pexpect.spawn('claude /usage', timeout=15, encoding='utf-8')
+
+            # Wait for the complete usage display to load
+            # Look for "escape to cancel" which appears at the bottom
+            child.expect('escape to cancel', timeout=15)
+
+            # Capture all output so far
+            output = child.before + child.after
+
+            # Give it a bit more time to ensure all data is rendered
+            time.sleep(0.5)
+
+            # Read any additional data that might have come in
+            try:
+                additional = child.read_nonblocking(size=4096, timeout=0.5)
+                if additional:
+                    output += additional
+            except:
+                pass
+
+            # Send ESC to exit
+            try:
+                child.sendline('\x1b')
+                child.close(force=True)
+            except:
+                pass
+
+            return output
+
         except Exception as e:
-            print(f"❌ Error running command: {e}")
+            # Fallback to cache file if pexpect fails
+            import os
+            cache_file = os.path.expanduser("~/.claude_usage_cache.txt")
+            if os.path.exists(cache_file):
+                try:
+                    with open(cache_file, 'r') as f:
+                        return f.read()
+                except:
+                    pass
+
+            # No data available
             return ""
 
     @staticmethod

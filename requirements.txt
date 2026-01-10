@@ -2,7 +2,9 @@
 selenium>=4.16.0
 webdriver-manager>=4.0.0
 requests>=2.31.0
+pexpect>=4.9.0
+pytz>=2024.1
 
-# For future TUI implementation
+# For TUI implementation
 textual>=0.47.0
 rich>=13.7.0
