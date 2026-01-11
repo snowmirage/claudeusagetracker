@@ -167,6 +167,9 @@ class ClaudeUsageDaemon:
             # Get usage limits via pexpect
             limits = self.limits_parser.get_current_limits()
 
+            # DEBUG: Log what we got from parser
+            self.logger.info(f"DEBUG: Parser returned session={limits.session}, extra={limits.extra}")
+
             # Build data record with ALL captured fields
             now = datetime.now()
             data = {

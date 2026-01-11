@@ -53,26 +53,41 @@ class UsageLimitsParser:
         try:
             import pexpect
             import time
+            import logging
+            import os
+
+            # DEBUG logging
+            logging.info(f"DEBUG: CWD={os.getcwd()}, PATH={os.environ.get('PATH', 'NOT SET')}")
 
             # Spawn interactive claude session
             # This inherits the current working directory (set by systemd)
             child = pexpect.spawn('claude /usage', timeout=15, encoding='utf-8')
 
+            logging.info(f"DEBUG: Spawned claude /usage")
+
             # Wait for the complete usage display to load
             # Look for "escape to cancel" which appears at the bottom
-            child.expect('escape to cancel', timeout=15)
+            index = child.expect(['escape to cancel', pexpect.TIMEOUT, pexpect.EOF], timeout=15)
+            logging.info(f"DEBUG: expect returned index={index}")
+
+            if index != 0:
+                logging.error(f"DEBUG: Did not see 'escape to cancel'. Buffer: {child.before[:200]}")
+                return ""
 
             # Capture all output so far
             output = child.before + child.after
+            logging.info(f"DEBUG: Captured {len(output)} chars of output")
 
-            # Give it a bit more time to ensure all data is rendered
-            time.sleep(0.5)
+            # Give it more time to ensure the actual usage data loads
+            # The UI shows "Loading usage data..." initially, then updates
+            time.sleep(2.0)
 
             # Read any additional data that might have come in
             try:
-                additional = child.read_nonblocking(size=4096, timeout=0.5)
+                additional = child.read_nonblocking(size=4096, timeout=1.0)
                 if additional:
                     output += additional
+                    logging.info(f"DEBUG: Read additional {len(additional)} chars")
             except:
                 pass
 
@@ -113,6 +128,7 @@ class UsageLimitsParser:
         ████████████████████████                           48% used
         $24.08 / $50.00 spent · Resets Feb 1 (America/New_York)
         """
+        import logging
         limits = UsageLimits()
 
         # Strip ANSI escape codes before parsing
@@ -120,9 +136,30 @@ class UsageLimitsParser:
         ansi_escape = re.compile(r'\x1b\[[0-9;?]*[a-zA-Z]|\x1b\[[\?<>][0-9;]*[a-zA-Z]')
         clean_output = ansi_escape.sub('', output)
 
+        # Handle carriage returns - collect all non-empty text parts
+        # The /usage output uses \r to update the display, but we want all the text
+        lines = []
+        for line in clean_output.split('\n'):
+            if '\r' in line:
+                # Collect all non-whitespace-only parts
+                parts = line.split('\r')
+                text_parts = [p.strip() for p in parts if p.strip() and not p.strip().startswith('escape to cancel')]
+                # Join meaningful parts with spaces
+                if text_parts:
+                    lines.append(' '.join(text_parts))
+            else:
+                lines.append(line)
+        clean_output = '\n'.join(lines)
+
+        # DEBUG: Log a sample of cleaned output
+        logging.info(f"DEBUG: After cleaning, output sample:")
+        for i, line in enumerate(clean_output.split('\n')[:20]):
+            logging.info(f"DEBUG: Line {i}: {repr(line)}")
+
         # Parse current session
-        # Use \s* (zero or more whitespace) instead of \s+ to handle concatenated text
-        session_match = re.search(r'Current session.*?(\d+)%\s*used.*?Resets\s*(.+?)\s*\((.+?)\)',
+        # Handle both "Current session" and corrupted "Curretsession" or similar
+        # The text may have missing spaces due to terminal rendering issues
+        session_match = re.search(r'Curre[nt\s]*session.*?(\d+)%\s*used.*?Resets\s*(\d+[ap]m)\s*\((.+?)\)',
                                   clean_output, re.DOTALL | re.IGNORECASE)
         if session_match:
             limits.session = SessionLimit(
