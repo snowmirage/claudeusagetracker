@@ -43,6 +43,8 @@ class UsageLimitsParser:
         """
         Get usage data by running 'claude /usage' interactively via pexpect.
 
+        Note: /usage command only works from within a Claude project directory.
+
         Returns:
             Command output as string
         """
@@ -50,9 +52,25 @@ class UsageLimitsParser:
             import pexpect
             import os
             import time
+            from pathlib import Path
 
-            # Spawn interactive claude session
-            child = pexpect.spawn('claude /usage', timeout=15, encoding='utf-8')
+            # /usage only works from within a Claude project directory
+            # Find a Claude project to run from
+            claude_projects_dir = Path.home() / ".claude" / "projects"
+            if not claude_projects_dir.exists():
+                # No Claude projects found
+                return ""
+
+            # Get the first available project directory
+            project_dirs = [d for d in claude_projects_dir.iterdir() if d.is_dir() and not d.name.startswith('.')]
+            if not project_dirs:
+                return ""
+
+            # Use the first project directory
+            project_dir = project_dirs[0]
+
+            # Spawn interactive claude session from project directory
+            child = pexpect.spawn('claude /usage', timeout=15, encoding='utf-8', cwd=str(project_dir))
 
             # Wait for the complete usage display to load
             # Look for "escape to cancel" which appears at the bottom
