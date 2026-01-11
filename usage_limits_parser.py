@@ -111,9 +111,15 @@ class UsageLimitsParser:
         """
         limits = UsageLimits()
 
+        # Strip ANSI escape codes before parsing
+        # This handles terminal control sequences that may be in the output
+        ansi_escape = re.compile(r'\x1b\[[0-9;?]*[a-zA-Z]|\x1b\[[\?<>][0-9;]*[a-zA-Z]')
+        clean_output = ansi_escape.sub('', output)
+
         # Parse current session
-        session_match = re.search(r'Current session.*?(\d+)%\s+used.*?Resets\s+(.+?)\s+\((.+?)\)',
-                                  output, re.DOTALL | re.IGNORECASE)
+        # Use \s* (zero or more whitespace) instead of \s+ to handle concatenated text
+        session_match = re.search(r'Current session.*?(\d+)%\s*used.*?Resets\s*(.+?)\s*\((.+?)\)',
+                                  clean_output, re.DOTALL | re.IGNORECASE)
         if session_match:
             limits.session = SessionLimit(
                 percent_used=float(session_match.group(1)),
@@ -123,8 +129,8 @@ class UsageLimitsParser:
 
         # Parse extra usage
         extra_match = re.search(
-            r'Extra usage.*?(\d+)%\s+used.*?\$(\d+\.\d+)\s*/\s*\$(\d+\.\d+)\s+spent.*?Resets\s+(.+?)\s+\((.+?)\)',
-            output, re.DOTALL | re.IGNORECASE
+            r'Extra usage.*?(\d+)%\s*used.*?\$(\d+\.\d+)\s*/\s*\$(\d+\.\d+)\s+spent.*?Resets\s*(.+?)\s*\((.+?)\)',
+            clean_output, re.DOTALL | re.IGNORECASE
         )
         if extra_match:
             limits.extra = ExtraUsage(

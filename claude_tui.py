@@ -132,9 +132,10 @@ class SessionLimits(Static):
             )
         else:
             # No daemon data available
+            output = []
             output.append("[bold cyan]Current session[/bold cyan]")
             output.append("[dim]⚠️  No daemon data available[/dim]")
-            output.append("[dim]   Start daemon: ./venv/bin/python3 claude_usage_daemon.py &[/dim]")
+            output.append("[dim]   Start daemon: systemctl --user start claude-usage-daemon[/dim]")
             output.append("")
             output.append("[bold yellow]Extra usage[/bold yellow]")
             output.append("[dim]⚠️  No daemon data available[/dim]")
