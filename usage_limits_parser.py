@@ -91,9 +91,10 @@ class UsageLimitsParser:
             except:
                 pass
 
-            # Send ESC to exit
+            # Close the session cleanly without sending any input
+            # Previously used sendline() which accidentally sent newline characters
+            # causing Claude to process empty prompts and consume usage
             try:
-                child.sendline('\x1b')
                 child.close(force=True)
             except:
                 pass
