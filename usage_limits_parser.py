@@ -5,9 +5,13 @@ Parse output from `claude /usage` command to get overall plan limits.
 
 import subprocess
 import re
+import logging
 from dataclasses import dataclass
 from typing import Optional
 from datetime import datetime
+
+# Module-level logger
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -47,36 +51,38 @@ class UsageLimitsParser:
         The daemon must be configured to run from a project directory (via
         systemd WorkingDirectory setting).
 
+        CRITICAL: This function MUST NOT send any input to the Claude process.
+        It only reads output and then terminates. Sending input would cause
+        Claude to process prompts and consume usage.
+
         Returns:
             Command output as string
         """
         try:
             import pexpect
             import time
-            import logging
             import os
 
-            # DEBUG logging
-            logging.info(f"DEBUG: CWD={os.getcwd()}, PATH={os.environ.get('PATH', 'NOT SET')}")
+            logger.debug(f"CWD={os.getcwd()}")
+            logger.debug(f"PATH={os.environ.get('PATH', 'NOT SET')}")
 
             # Spawn interactive claude session
             # This inherits the current working directory (set by systemd)
             child = pexpect.spawn('claude /usage', timeout=15, encoding='utf-8')
-
-            logging.info(f"DEBUG: Spawned claude /usage")
+            logger.debug("Spawned 'claude /usage' process")
 
             # Wait for the complete usage display to load
             # Look for "escape to cancel" which appears at the bottom
             index = child.expect(['escape to cancel', pexpect.TIMEOUT, pexpect.EOF], timeout=15)
-            logging.info(f"DEBUG: expect returned index={index}")
+            logger.debug(f"pexpect.expect() returned index={index} (0=found, 1=timeout, 2=EOF)")
 
             if index != 0:
-                logging.error(f"DEBUG: Did not see 'escape to cancel'. Buffer: {child.before[:200]}")
+                logger.error(f"Did not see 'escape to cancel'. Buffer preview: {child.before[:200]}")
                 return ""
 
             # Capture all output so far
             output = child.before + child.after
-            logging.info(f"DEBUG: Captured {len(output)} chars of output")
+            logger.debug(f"Captured {len(output)} characters from initial read")
 
             # Give it more time to ensure the actual usage data loads
             # The UI shows "Loading usage data..." initially, then updates
@@ -87,15 +93,18 @@ class UsageLimitsParser:
                 additional = child.read_nonblocking(size=4096, timeout=1.0)
                 if additional:
                     output += additional
-                    logging.info(f"DEBUG: Read additional {len(additional)} chars")
+                    logger.debug(f"Read additional {len(additional)} characters")
             except:
                 pass
 
             # Close the session cleanly without sending any input
-            # Previously used sendline() which accidentally sent newline characters
-            # causing Claude to process empty prompts and consume usage
+            # CRITICAL: We use close(force=True) which terminates the process
+            # WITHOUT sending any characters. Previously used sendline() which
+            # accidentally sent newline characters, causing Claude to process
+            # empty prompts and consume $12-15/night in extra usage.
             try:
                 child.close(force=True)
+                logger.debug("Closed pexpect session (no input sent)")
             except:
                 pass
 
@@ -104,6 +113,8 @@ class UsageLimitsParser:
         except Exception as e:
             # Fallback to cache file if pexpect fails
             import os
+            logger.error(f"Failed to run /usage command: {e}")
+
             cache_file = os.path.expanduser("~/.claude_usage_cache.txt")
             if os.path.exists(cache_file):
                 try:
@@ -118,7 +129,13 @@ class UsageLimitsParser:
     @staticmethod
     def parse_output(output: str) -> UsageLimits:
         """
-        Parse the text output from /usage command.
+        Parse the text output from /usage command using simple split strategy.
+
+        Strategy:
+        - Split by the word "used" to get exactly 3 parts:
+          Part 0: Everything before first "used" (contains session %)
+          Part 1: Between first and second "used" (contains session reset, extra %)
+          Part 2: After second "used" (contains dollar amounts, extra reset)
 
         Example output:
         Current session
@@ -128,60 +145,114 @@ class UsageLimitsParser:
         Extra usage
         ████████████████████████                           48% used
         $24.08 / $50.00 spent · Resets Feb 1 (America/New_York)
+
+        After splitting by "used":
+        x[0] = "Current session\n████...32% "
+        x[1] = "\nResets 7pm (America/New_York)\n\nExtra usage\n████...48% "
+        x[2] = "\n$24.08 / $50.00 spent · Resets Feb 1 (America/New_York)"
         """
-        import logging
         limits = UsageLimits()
 
-        # Strip ANSI escape codes before parsing
-        # This handles terminal control sequences that may be in the output
+        logger.debug("="*80)
+        logger.debug("RAW OUTPUT FROM /usage COMMAND:")
+        logger.debug("="*80)
+        logger.debug(output)
+        logger.debug("="*80)
+
+        # Strip ANSI escape codes and carriage returns
+        # ANSI codes: \x1b[...
         ansi_escape = re.compile(r'\x1b\[[0-9;?]*[a-zA-Z]|\x1b\[[\?<>][0-9;]*[a-zA-Z]')
         clean_output = ansi_escape.sub('', output)
 
-        # Handle carriage returns - collect all non-empty text parts
-        # The /usage output uses \r to update the display, but we want all the text
-        lines = []
-        for line in clean_output.split('\n'):
-            if '\r' in line:
-                # Collect all non-whitespace-only parts
-                parts = line.split('\r')
-                text_parts = [p.strip() for p in parts if p.strip() and not p.strip().startswith('escape to cancel')]
-                # Join meaningful parts with spaces
-                if text_parts:
-                    lines.append(' '.join(text_parts))
+        # Remove carriage returns - they're just for terminal animation
+        clean_output = clean_output.replace('\r', '')
+
+        logger.debug("AFTER CLEANING:")
+        logger.debug("="*80)
+        logger.debug(clean_output)
+        logger.debug("="*80)
+
+        # Split by "used" - should give us exactly 3 parts
+        parts = clean_output.split('used')
+
+        logger.debug(f"Split by 'used': got {len(parts)} parts")
+
+        if len(parts) != 3:
+            logger.error(f"Expected 3 parts after splitting by 'used', got {len(parts)}")
+            logger.error("Cannot parse usage data")
+            return limits
+
+        # Part 0: Session percentage (ends with "XX% used")
+        logger.debug("="*80)
+        logger.debug("PART 0 (Session %):")
+        logger.debug(parts[0])
+        logger.debug("="*80)
+
+        session_pct_match = re.search(r'(\d+)%\s*$', parts[0])
+        if session_pct_match:
+            session_percent = float(session_pct_match.group(1))
+            logger.debug(f"✓ Found session percent: {session_percent}%")
+
+            # Part 1: Session reset info (starts with reset info)
+            logger.debug("="*80)
+            logger.debug("PART 1 (Session reset + Extra %):")
+            logger.debug(parts[1])
+            logger.debug("="*80)
+
+            session_reset_match = re.search(r'Resets\s*(\d+(?::\d+)?[ap]m)\s*\(([^)]+)\)', parts[1], re.IGNORECASE)
+            if session_reset_match:
+                limits.session = SessionLimit(
+                    percent_used=session_percent,
+                    reset_time=session_reset_match.group(1).strip(),
+                    reset_timezone=session_reset_match.group(2).strip()
+                )
+                logger.debug(f"✓ Parsed session: {session_percent}%, resets {session_reset_match.group(1)} ({session_reset_match.group(2)})")
             else:
-                lines.append(line)
-        clean_output = '\n'.join(lines)
+                logger.debug(f"✗ Found session percent but couldn't parse reset time from part 1")
+        else:
+            logger.debug("✗ Could not find session percentage in part 0")
 
-        # DEBUG: Log a sample of cleaned output
-        logging.info(f"DEBUG: After cleaning, output sample:")
-        for i, line in enumerate(clean_output.split('\n')[:20]):
-            logging.info(f"DEBUG: Line {i}: {repr(line)}")
+        # Part 1: Extra percentage (ends with "XX% used")
+        extra_pct_match = re.search(r'(\d+)%\s*$', parts[1])
+        if extra_pct_match:
+            extra_percent = float(extra_pct_match.group(1))
+            logger.debug(f"✓ Found extra percent: {extra_percent}%")
 
-        # Parse current session
-        # Handle both "Current session" and corrupted "Curretsession" or similar
-        # The text may have missing spaces due to terminal rendering issues
-        session_match = re.search(r'Curre[nt\s]*session.*?(\d+)%\s*used.*?Resets\s*(\d+[ap]m)\s*\((.+?)\)',
-                                  clean_output, re.DOTALL | re.IGNORECASE)
-        if session_match:
-            limits.session = SessionLimit(
-                percent_used=float(session_match.group(1)),
-                reset_time=session_match.group(2).strip(),
-                reset_timezone=session_match.group(3).strip()
-            )
+            # Part 2: Dollar amounts and extra reset
+            logger.debug("="*80)
+            logger.debug("PART 2 (Extra $ and reset):")
+            logger.debug(parts[2])
+            logger.debug("="*80)
 
-        # Parse extra usage
-        extra_match = re.search(
-            r'Extra usage.*?(\d+)%\s*used.*?\$(\d+\.\d+)\s*/\s*\$(\d+\.\d+)\s+spent.*?Resets\s*(.+?)\s*\((.+?)\)',
-            clean_output, re.DOTALL | re.IGNORECASE
-        )
-        if extra_match:
-            limits.extra = ExtraUsage(
-                percent_used=float(extra_match.group(1)),
-                amount_spent=float(extra_match.group(2)),
-                amount_limit=float(extra_match.group(3)),
-                reset_date=extra_match.group(4).strip(),
-                reset_timezone=extra_match.group(5).strip()
-            )
+            # Extract dollar amounts: $XX.XX / $YY.YY spent
+            dollar_match = re.search(r'\$(\d+\.\d+)\s*/\s*\$(\d+\.\d+)\s+spent', parts[2])
+
+            # Extract extra reset date
+            extra_reset_match = re.search(r'Resets\s*([^(]+?)\s*\(([^)]+)\)', parts[2], re.IGNORECASE)
+
+            if dollar_match and extra_reset_match:
+                limits.extra = ExtraUsage(
+                    percent_used=extra_percent,
+                    amount_spent=float(dollar_match.group(1)),
+                    amount_limit=float(dollar_match.group(2)),
+                    reset_date=extra_reset_match.group(1).strip(),
+                    reset_timezone=extra_reset_match.group(2).strip()
+                )
+                logger.debug(f"✓ Parsed extra: {extra_percent}%, ${dollar_match.group(1)}/${dollar_match.group(2)}, resets {extra_reset_match.group(1)} ({extra_reset_match.group(2)})")
+            else:
+                logger.debug(f"✗ Found extra percent but couldn't parse dollar amounts or reset")
+                if not dollar_match:
+                    logger.debug("  - No dollar pattern found in part 2")
+                if not extra_reset_match:
+                    logger.debug("  - No reset pattern found in part 2")
+        else:
+            logger.debug("✗ Could not find extra percentage in part 1")
+
+        logger.debug("="*80)
+        logger.debug("FINAL PARSED RESULT:")
+        logger.debug(f"  Session: {limits.session}")
+        logger.debug(f"  Extra: {limits.extra}")
+        logger.debug("="*80)
 
         return limits
 

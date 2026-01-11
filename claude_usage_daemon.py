@@ -38,22 +38,28 @@ class ClaudeUsageDaemon:
     DAILY_SUMMARY_FILE = DATA_DIR / "daily_summary.json"
     SESSION_LOG_FILE = DATA_DIR / "session_log.json"
 
-    def __init__(self):
+    def __init__(self, debug=False):
         self.limits_parser = UsageLimitsParser()
         self.data_parser = ClaudeDataParser()
         self.running = True
         self.last_extra_usage = None
         self.last_session_reset = None
-        self.setup_logging()
+        self.setup_logging(debug=debug)
         self.ensure_data_directory()
 
-    def setup_logging(self):
-        """Set up logging to file and console."""
+    def setup_logging(self, debug=False):
+        """Set up logging to file and console.
+
+        Args:
+            debug: If True, set log level to DEBUG; otherwise INFO
+        """
         log_file = self.DATA_DIR / "daemon.log"
         self.DATA_DIR.mkdir(exist_ok=True)
 
+        level = logging.DEBUG if debug else logging.INFO
+
         logging.basicConfig(
-            level=logging.INFO,
+            level=level,
             format='%(asctime)s - %(levelname)s - %(message)s',
             handlers=[
                 logging.FileHandler(log_file),
@@ -61,6 +67,11 @@ class ClaudeUsageDaemon:
             ]
         )
         self.logger = logging.getLogger(__name__)
+
+        if debug:
+            self.logger.info("Debug logging enabled")
+        else:
+            self.logger.info("Normal logging (INFO level)")
 
     def ensure_data_directory(self):
         """Create data directory if it doesn't exist."""
@@ -167,8 +178,8 @@ class ClaudeUsageDaemon:
             # Get usage limits via pexpect
             limits = self.limits_parser.get_current_limits()
 
-            # DEBUG: Log what we got from parser
-            self.logger.info(f"DEBUG: Parser returned session={limits.session}, extra={limits.extra}")
+            # Log what we got from parser (debug level)
+            self.logger.debug(f"Parser returned session={limits.session}, extra={limits.extra}")
 
             # Build data record with ALL captured fields
             now = datetime.now()
@@ -382,11 +393,16 @@ def main():
         action='version',
         version=f'{__title__} Daemon {__version__}'
     )
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Enable debug logging (verbose output)'
+    )
 
     args = parser.parse_args()
 
-    # Run the daemon
-    daemon = ClaudeUsageDaemon()
+    # Run the daemon with debug mode if requested
+    daemon = ClaudeUsageDaemon(debug=args.debug)
     daemon.run()
 
 

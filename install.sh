@@ -5,6 +5,32 @@
 
 set -e  # Exit on error
 
+# Parse command line arguments
+DEBUG_MODE=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --debug)
+            DEBUG_MODE=true
+            shift
+            ;;
+        --help|-h)
+            echo "Usage: $0 [OPTIONS]"
+            echo
+            echo "Options:"
+            echo "  --debug    Enable debug logging in daemon (verbose output)"
+            echo "  --help     Show this help message"
+            echo
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -26,7 +52,7 @@ VENV_DIR="$LIB_DIR/venv"
 echo
 echo -e "${CYAN}╔════════════════════════════════════════════════════════╗${NC}"
 echo -e "${CYAN}║                                                        ║${NC}"
-echo -e "${CYAN}║         Claude Usage Tracker v1.0.3                    ║${NC}"
+echo -e "${CYAN}║         Claude Usage Tracker v1.0.6                    ║${NC}"
 echo -e "${CYAN}║         Installation                                   ║${NC}"
 echo -e "${CYAN}║                                                        ║${NC}"
 echo -e "${CYAN}╚════════════════════════════════════════════════════════╝${NC}"
@@ -311,6 +337,15 @@ echo
 mkdir -p "$SERVICE_DIR"
 
 SERVICE_FILE="$SERVICE_DIR/claude-usage-daemon.service"
+
+# Build ExecStart command with --debug flag if requested
+if [ "$DEBUG_MODE" = true ]; then
+    EXEC_START_CMD="$VENV_DIR/bin/python3 $LIB_DIR/claude_usage_daemon.py --debug"
+    echo -e "${YELLOW}→${NC} Debug logging enabled"
+else
+    EXEC_START_CMD="$VENV_DIR/bin/python3 $LIB_DIR/claude_usage_daemon.py"
+fi
+
 cat > "$SERVICE_FILE" << EOF
 [Unit]
 Description=Claude Usage Tracker Daemon
@@ -320,7 +355,7 @@ After=network.target
 Type=simple
 WorkingDirectory=$PROJECT_DIR
 Environment="PATH=$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"
-ExecStart=$VENV_DIR/bin/python3 $LIB_DIR/claude_usage_daemon.py
+ExecStart=$EXEC_START_CMD
 Restart=always
 RestartSec=10
 StandardOutput=journal
