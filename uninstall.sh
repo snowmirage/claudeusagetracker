@@ -13,8 +13,8 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Installation paths
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 INSTALL_DIR="$HOME/.local/bin"
+LIB_DIR="$HOME/.local/lib/claudeusagetracker"
 DATA_DIR="$HOME/.claudeusagetracker"
 SERVICE_DIR="$HOME/.config/systemd/user"
 COMMAND_NAME="claude-usage-tracker"
@@ -66,8 +66,8 @@ echo
 # Confirm uninstallation
 echo -e "${YELLOW}This will remove:${NC}"
 echo "  - Command: $INSTALL_DIR/$COMMAND_NAME"
+echo "  - Application: $LIB_DIR/"
 echo "  - Systemd service"
-echo "  - Virtual environment in project directory"
 if [ "$KEEP_DATA" = false ]; then
     echo -e "  - ${RED}All usage data in $DATA_DIR${NC}"
 else
@@ -139,16 +139,34 @@ fi
 echo
 
 # ============================================================================
-# STEP 4: Remove Data Directory (Optional)
+# STEP 4: Remove Application Directory
 # ============================================================================
-echo -e "${BLUE}[4/5]${NC} Handling data directory..."
+echo -e "${BLUE}[4/5]${NC} Removing application files..."
+echo
+
+if [ -d "$LIB_DIR" ]; then
+    rm -rf "$LIB_DIR"
+    echo -e "${GREEN}✓${NC} Removed: $LIB_DIR"
+else
+    echo -e "${YELLOW}→${NC} Application directory not found"
+fi
+echo
+
+# ============================================================================
+# STEP 5: Remove Data Directory (Optional)
+# ============================================================================
+echo -e "${BLUE}[5/5]${NC} Handling data directory..."
 echo
 
 if [ "$KEEP_DATA" = true ]; then
     if [ -d "$DATA_DIR" ]; then
         echo -e "${GREEN}✓${NC} Preserving data: $DATA_DIR"
         echo -e "  ${CYAN}Files preserved:${NC}"
-        ls -lh "$DATA_DIR" | tail -n +2 | awk '{printf "    %s %s\n", $9, $5}'
+        if [ "$(ls -A $DATA_DIR)" ]; then
+            ls -lh "$DATA_DIR" | tail -n +2 | awk '{printf "    %s %s\n", $9, $5}'
+        else
+            echo -e "    ${YELLOW}(directory is empty)${NC}"
+        fi
     else
         echo -e "${YELLOW}→${NC} Data directory does not exist"
     fi
@@ -159,21 +177,6 @@ else
     else
         echo -e "${YELLOW}→${NC} Data directory does not exist"
     fi
-fi
-echo
-
-# ============================================================================
-# STEP 5: Remove Virtual Environment
-# ============================================================================
-echo -e "${BLUE}[5/5]${NC} Removing virtual environment..."
-echo
-
-VENV_DIR="$SCRIPT_DIR/venv"
-if [ -d "$VENV_DIR" ]; then
-    rm -rf "$VENV_DIR"
-    echo -e "${GREEN}✓${NC} Removed: $VENV_DIR"
-else
-    echo -e "${YELLOW}→${NC} Virtual environment not found"
 fi
 echo
 
