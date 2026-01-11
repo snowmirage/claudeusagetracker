@@ -6,7 +6,7 @@ Runs continuously in the background to:
 1. Poll /usage every 30 seconds
 2. Capture ALL usage data (session %, extra $, reset times, etc.)
 3. Calculate session boundaries and extra usage deltas
-4. Store complete data in ~/.claude_usage_db/
+4. Store complete data in ~/.claudeusagetracker/
 
 This allows the TUI to display accurate session vs extra usage
 even when the TUI itself is not running.
@@ -17,6 +17,7 @@ import sys
 import time
 import json
 import signal
+import argparse
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -25,13 +26,14 @@ import logging
 # Import our existing parsers
 from usage_limits_parser import UsageLimitsParser
 from claude_data_parser import ClaudeDataParser, TokenUsage
+from version import __version__, __title__
 
 
 class ClaudeUsageDaemon:
     """Background daemon for collecting Claude usage data."""
 
     POLL_INTERVAL = 30  # seconds
-    DATA_DIR = Path.home() / ".claude_usage_db"
+    DATA_DIR = Path.home() / ".claudeusagetracker"
     RAW_LOG_FILE = DATA_DIR / "raw_usage_log.jsonl"
     DAILY_SUMMARY_FILE = DATA_DIR / "daily_summary.json"
     SESSION_LOG_FILE = DATA_DIR / "session_log.json"
@@ -367,6 +369,20 @@ class ClaudeUsageDaemon:
 
 def main():
     """Entry point for daemon."""
+    parser = argparse.ArgumentParser(
+        prog='claude-usage-daemon',
+        description='Background daemon for collecting Claude usage data',
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        '--version',
+        action='version',
+        version=f'{__title__} Daemon {__version__}'
+    )
+
+    args = parser.parse_args()
+
+    # Run the daemon
     daemon = ClaudeUsageDaemon()
     daemon.run()
 

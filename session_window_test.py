@@ -34,8 +34,8 @@ class SessionWindowTest:
         self.poll_interval_minutes = poll_interval_minutes
         self.parser = UsageLimitsParser()
         self.test_data: List[Dict[str, Any]] = []
-        self.log_file = Path.home() / ".claude_usage_db" / "session_window_test.jsonl"
-        self.summary_file = Path.home() / ".claude_usage_db" / "session_window_test_summary.json"
+        self.log_file = Path.home() / ".claudeusagetracker" / "session_window_test.jsonl"
+        self.summary_file = Path.home() / ".claudeusagetracker" / "session_window_test_summary.json"
 
         # Ensure directory exists
         self.log_file.parent.mkdir(exist_ok=True)

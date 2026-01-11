@@ -26,30 +26,49 @@ A btop-style terminal UI for monitoring your Claude AI usage in real-time.
 - Properly aligned columns with dynamic width calculation
 - Reset time indicators for session and extra usage
 
+## Requirements
+
+Before installation, ensure you have:
+- **Linux system** (tested on WSL2, Ubuntu)
+- **Python 3.8+**
+- **Claude CLI** installed and configured ([Installation Guide](https://github.com/anthropics/claude-code))
+- **systemd** (for daemon auto-start)
+
 ## Installation
 
-1. **Clone the repository:**
-   ```bash
-   git clone <repository-url>
-   cd claudeusagetracker
-   ```
+```bash
+# 1. Clone the repository
+git clone https://github.com/snowmirage/claudeusagetracker.git
+cd claudeusagetracker
 
-2. **Create virtual environment and install dependencies:**
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   pip install -r requirements.txt
-   ```
+# 2. Run the installation script
+./install.sh
+```
 
-3. **Start the background daemon** (collects usage data):
-   ```bash
-   ./venv/bin/python3 claude_usage_daemon.py &
-   ```
+That's it! The installer will:
+- Create a virtual environment and install dependencies
+- Install the `claude-usage-tracker` command to `~/.local/bin/`
+- Set up the background daemon as a systemd service
+- Configure auto-start on boot
+- Start the daemon immediately
 
-4. **Run the TUI:**
-   ```bash
-   ./venv/bin/python3 claude_tui.py
-   ```
+### Post-Installation
+
+If `~/.local/bin` is not in your PATH, add this to your `~/.bashrc` or `~/.zshrc`:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Then restart your shell or run: `source ~/.bashrc`
+
+## Quick Start
+
+After installation, simply run:
+
+```bash
+claude-usage-tracker
+```
 
 ## Usage
 
@@ -76,49 +95,63 @@ A btop-style terminal UI for monitoring your Claude AI usage in real-time.
 - Each full Braille character (⣿) = $0.08
 - Shows dollar amounts for all usage types
 
-## Architecture
+## How It Works
+
+### Background Daemon
+
+The tracker uses a background daemon to collect usage data continuously. Here's why:
+
+**Why a daemon?**
+- There's **no API** to programmatically access session/extra usage data
+- The `/usage` command must be run interactively in Claude CLI
+- Historical data is only available while the daemon is running
+
+**What it does:**
+- Polls `/usage` command every 30 seconds using pexpect
+- Captures session percentage, extra usage dollars, and reset times
+- Stores complete data in `~/.claudeusagetracker/`
+- Runs as systemd service, auto-starts on boot
+
+**Does `/usage` affect my quota?**
+No! Investigation showed that `/usage` uses a separate OAuth monitoring endpoint and does NOT trigger new session windows or consume quota. See [SESSION_WINDOW_TEST.md](SESSION_WINDOW_TEST.md) for details.
+
+### Single-System, Single-User Tracking
+
+**Important:** This tracker only monitors Claude usage on **THIS system**.
+
+- Reads from your local `~/.claude/` directory
+- Stores data in your `~/.claudeusagetracker/` directory
+- Does **not** track usage from:
+  - Other computers or devices
+  - claude.ai web interface
+  - Mobile apps
+  - Other user accounts on the same system
+
+If you use Claude on multiple devices, each would need its own tracker installation.
+
+### Data Storage
+
+- **Location**: `~/.claudeusagetracker/`
+- **Files**:
+  - `raw_usage_log.jsonl` - Raw data from daemon polls
+  - `daily_summary.json` - Aggregated daily statistics
+  - `daemon.log` - Daemon activity log
 
 ### Components
 
 1. **claude_tui.py** - Main TUI application
-   - Built with Textual framework
-   - Three panels: Session Limits, Token Breakdown, Daily Usage Chart
-   - Interactive controls for navigation and display modes
+   - Interactive terminal UI
+   - Real-time usage display
+   - Keyboard navigation
 
-2. **claude_usage_daemon.py** - Background data collector
-   - Runs independently, polling every 30 seconds
-   - Collects data from `/usage` command via pexpect
-   - Stores data in `~/.claude_usage_db/`
+2. **claude_usage_daemon.py** - Background collector
+   - Systemd service
+   - Continuous data collection
+   - Auto-start on boot
 
-3. **claude_data_parser.py** - JSONL data parser
-   - Reads local Claude conversation files from `~/.claude/projects/`
-   - Extracts token usage by type and date
-   - Calculates costs based on API pricing
-
-4. **usage_limits_parser.py** - Session limits parser
-   - Parses `/usage` command output
-   - Extracts session percentage and extra usage spending
-
-5. **usage_tracker.py** - Unified tracker
-   - Combines JSONL data with session limits
-   - Provides consolidated usage statistics
-
-### Data Storage
-
-- **Location**: `~/.claude_usage_db/`
-- **Files**:
-  - `usage_raw.jsonl` - Raw data from daemon polls
-  - `daily_summary.json` - Aggregated daily statistics
-
-## Requirements
-
-- Python 3.8+
-- Linux (tested on WSL2)
-- Claude CLI installed and configured
-- Dependencies listed in `requirements.txt`:
-  - textual>=0.47.0
-  - rich>=13.7.0
-  - pexpect>=4.9.0
+3. **Data parsers** - Extract and process usage data
+   - JSONL file parser (local conversation data)
+   - `/usage` command parser (session limits)
 
 ## Pricing (Sonnet 4.5)
 
@@ -137,28 +170,105 @@ This tool is inspired by `btop` and follows these principles:
 - **Interactive**: Full keyboard navigation and adjustable views
 - **Accurate**: Uses actual Claude data files and `/usage` command output
 
+## Managing the Daemon
+
+The daemon runs as a systemd user service and starts automatically on boot.
+
+### Service Commands
+
+```bash
+# Check daemon status
+systemctl --user status claude-usage-daemon
+
+# Start daemon
+systemctl --user start claude-usage-daemon
+
+# Stop daemon
+systemctl --user stop claude-usage-daemon
+
+# Restart daemon
+systemctl --user restart claude-usage-daemon
+
+# View daemon logs
+journalctl --user -u claude-usage-daemon -f
+```
+
+### Daemon Logs
+
+Check logs if you experience issues:
+
+```bash
+# Real-time logs
+journalctl --user -u claude-usage-daemon -f
+
+# Last 50 lines
+journalctl --user -u claude-usage-daemon -n 50
+
+# Or check the log file directly
+tail -f ~/.claudeusagetracker/daemon.log
+```
+
 ## Troubleshooting
 
-**No daemon data available:**
-- Ensure the daemon is running: `ps aux | grep claude_usage_daemon`
-- Check daemon data directory exists: `ls -la ~/.claude_usage_db/`
-- Start the daemon: `./venv/bin/python3 claude_usage_daemon.py &`
+**Daemon not running:**
+```bash
+# Check status
+systemctl --user status claude-usage-daemon
 
-**No JSONL data:**
+# Check logs for errors
+journalctl --user -u claude-usage-daemon -n 50
+
+# Restart daemon
+systemctl --user restart claude-usage-daemon
+```
+
+**No data showing in TUI:**
+- Daemon needs to run for at least 30-60 seconds to collect first data point
+- Check data directory: `ls -la ~/.claudeusagetracker/`
+- Verify Claude CLI is installed: `which claude`
+
+**No historical JSONL data:**
 - Verify Claude CLI has been used: `ls -la ~/.claude/projects/`
 - Check that conversation files exist with token usage data
+- Data only shows for conversations created on this system
 
 **Display issues:**
 - Ensure terminal supports Unicode (Braille characters)
 - Try resizing terminal window if layout appears broken
+- Use a modern terminal emulator (e.g., gnome-terminal, alacritty, kitty)
+
+**Command not found:**
+- Ensure `~/.local/bin` is in your PATH
+- Add to `~/.bashrc`: `export PATH="$HOME/.local/bin:$PATH"`
+- Restart your shell or run: `source ~/.bashrc`
+
+## Uninstalling
+
+To remove the tracker:
+
+```bash
+# Uninstall and remove all data
+./uninstall.sh
+
+# Uninstall but keep historical data
+./uninstall.sh --keep-data
+```
+
+The uninstaller removes:
+- The `claude-usage-tracker` command
+- Systemd service
+- Virtual environment
+
+With `--keep-data`, your usage history in `~/.claudeusagetracker/` is preserved for future reinstallation.
 
 ## Future Enhancements
 
-- Installation script for system-wide availability
 - Configurable refresh intervals
 - Export usage data to CSV/JSON
 - Alert notifications for usage thresholds
 - Support for multiple Claude accounts
+- Web dashboard for remote monitoring
+- Session vs extra usage breakdown in charts
 
 ## Contributing
 

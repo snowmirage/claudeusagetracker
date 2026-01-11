@@ -14,9 +14,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import json
 import math
+import argparse
+import sys
 
 from usage_tracker import ClaudeUsageTracker
 from claude_data_parser import TokenUsage
+from version import __version__, __title__, __description__
 
 
 class SessionLimits(Static):
@@ -27,7 +30,7 @@ class SessionLimits(Static):
     EXTRA_USAGE_LIMIT = 50.00    # $50 monthly limit
 
     # Daemon data directory
-    DAEMON_DATA_DIR = Path.home() / ".claude_usage_db"
+    DAEMON_DATA_DIR = Path.home() / ".claudeusagetracker"
     RAW_LOG_FILE = DAEMON_DATA_DIR / "raw_usage_log.jsonl"
 
     def __init__(self):
@@ -191,7 +194,7 @@ class DailyUsageChart(Static):
     # Pro plan session limit
     SESSION_TOKEN_LIMIT = 44000
     # Daemon data directory
-    DAEMON_DATA_DIR = Path.home() / ".claude_usage_db"
+    DAEMON_DATA_DIR = Path.home() / ".claudeusagetracker"
     DAILY_SUMMARY_FILE = DAEMON_DATA_DIR / "daily_summary.json"
 
     # API Pricing (Sonnet 4.5) - for reference display
@@ -977,6 +980,20 @@ class ClaudeUsageTUI(App):
 
 def main():
     """Run the TUI application."""
+    parser = argparse.ArgumentParser(
+        prog='claude-usage-tracker',
+        description=__description__,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        '--version',
+        action='version',
+        version=f'{__title__} {__version__}'
+    )
+
+    args = parser.parse_args()
+
+    # Run the TUI
     app = ClaudeUsageTUI()
     app.run()
 

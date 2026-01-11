@@ -112,7 +112,7 @@ Sleeping for 1 minute... sleeping 4.0 more minutes...
 
 ## Output Files
 
-### Log File: `~/.claude_usage_db/session_window_test.jsonl`
+### Log File: `~/.claudeusagetracker/session_window_test.jsonl`
 - Append-only JSONL format
 - One line per poll
 - Contains full data for each poll
@@ -137,7 +137,7 @@ Example entry:
 }
 ```
 
-### Summary File: `~/.claude_usage_db/session_window_test_summary.json`
+### Summary File: `~/.claudeusagetracker/session_window_test_summary.json`
 - Analysis of all collected data
 - Reset time change detection
 - Automatic conclusion
@@ -208,10 +208,10 @@ Even stronger if session percentage stays at 0%.
 4. **Check results in morning:**
    ```bash
    # View summary
-   cat ~/.claude_usage_db/session_window_test_summary.json | python3 -m json.tool
+   cat ~/.claudeusagetracker/session_window_test_summary.json | python3 -m json.tool
 
    # View full log
-   less ~/.claude_usage_db/session_window_test.jsonl
+   less ~/.claudeusagetracker/session_window_test.jsonl
    ```
 
 ### Important Notes
