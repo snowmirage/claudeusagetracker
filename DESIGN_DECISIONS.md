@@ -117,13 +117,13 @@ Display daily usage bars with multiple colors to represent:
 │  1. Poll /usage every 30-60s       │
 │  2. Track extra usage changes      │
 │  3. Store daily aggregates         │
-│  4. Write to ~/.claude_usage_db/   │
+│  4. Write to ~/.claudeusagetracker/   │
 └─────────────────────────────────────┘
               │
               │ Writes data
               ▼
 ┌─────────────────────────────────────┐
-│  ~/.claude_usage_db/                │
+│  ~/.claudeusagetracker/                │
 │  - daily_breakdown.json             │
 │  - extra_usage_log.json             │
 └─────────────────────────────────────┘
@@ -264,11 +264,11 @@ Display daily usage bars with multiple colors to represent:
 2. Implement `/usage` polling (via pexpect) - capture ALL fields
 3. Parse and store complete `/usage` output
 4. Calculate daily session vs extra totals
-5. Store in `~/.claude_usage_db/`
+5. Store in `~/.claudeusagetracker/`
 6. Add systemd service file for auto-start
 
 ### Phase 2: Data Storage
-1. Create `~/.claude_usage_db/` directory
+1. Create `~/.claudeusagetracker/` directory
 2. Define JSON schema for daily breakdown
 3. Implement append-only logging
 4. Add data rotation (keep last 90 days)
