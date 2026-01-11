@@ -1,6 +1,6 @@
 #!/bin/bash
 # Claude Usage Tracker - Uninstallation Script
-# Version: 1.0.0
+# Version: 1.0.3
 
 set -e  # Exit on error
 
@@ -50,7 +50,7 @@ done
 echo
 echo -e "${CYAN}╔════════════════════════════════════════════════════════╗${NC}"
 echo -e "${CYAN}║                                                        ║${NC}"
-echo -e "${CYAN}║         Claude Usage Tracker v1.0.0                    ║${NC}"
+echo -e "${CYAN}║         Claude Usage Tracker v1.0.3                    ║${NC}"
 echo -e "${CYAN}║         Uninstallation                                 ║${NC}"
 echo -e "${CYAN}║                                                        ║${NC}"
 echo -e "${CYAN}╚════════════════════════════════════════════════════════╝${NC}"

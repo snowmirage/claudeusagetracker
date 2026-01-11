@@ -43,34 +43,20 @@ class UsageLimitsParser:
         """
         Get usage data by running 'claude /usage' interactively via pexpect.
 
-        Note: /usage command only works from within a Claude project directory.
+        Note: /usage command requires running from a Claude project directory.
+        The daemon must be configured to run from a project directory (via
+        systemd WorkingDirectory setting).
 
         Returns:
             Command output as string
         """
         try:
             import pexpect
-            import os
             import time
-            from pathlib import Path
 
-            # /usage only works from within a Claude project directory
-            # Find a Claude project to run from
-            claude_projects_dir = Path.home() / ".claude" / "projects"
-            if not claude_projects_dir.exists():
-                # No Claude projects found
-                return ""
-
-            # Get the first available project directory
-            project_dirs = [d for d in claude_projects_dir.iterdir() if d.is_dir() and not d.name.startswith('.')]
-            if not project_dirs:
-                return ""
-
-            # Use the first project directory
-            project_dir = project_dirs[0]
-
-            # Spawn interactive claude session from project directory
-            child = pexpect.spawn('claude /usage', timeout=15, encoding='utf-8', cwd=str(project_dir))
+            # Spawn interactive claude session
+            # This inherits the current working directory (set by systemd)
+            child = pexpect.spawn('claude /usage', timeout=15, encoding='utf-8')
 
             # Wait for the complete usage display to load
             # Look for "escape to cancel" which appears at the bottom

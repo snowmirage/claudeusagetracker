@@ -1,6 +1,6 @@
 #!/bin/bash
 # Claude Usage Tracker - Installation Script
-# Version: 1.0.0
+# Version: 1.0.3
 # Installs like btop: creates command, systemd service, auto-starts daemon
 
 set -e  # Exit on error
@@ -26,7 +26,7 @@ VENV_DIR="$LIB_DIR/venv"
 echo
 echo -e "${CYAN}╔════════════════════════════════════════════════════════╗${NC}"
 echo -e "${CYAN}║                                                        ║${NC}"
-echo -e "${CYAN}║         Claude Usage Tracker v1.0.0                    ║${NC}"
+echo -e "${CYAN}║         Claude Usage Tracker v1.0.3                    ║${NC}"
 echo -e "${CYAN}║         Installation                                   ║${NC}"
 echo -e "${CYAN}║                                                        ║${NC}"
 echo -e "${CYAN}╚════════════════════════════════════════════════════════╝${NC}"
@@ -182,7 +182,7 @@ echo
 # ============================================================================
 # STEP 6: Create Data Directory
 # ============================================================================
-echo -e "${BLUE}[6/9]${NC} Setting up data directory..."
+echo -e "${BLUE}[6/10]${NC} Setting up data directory..."
 echo
 
 if [ -d "$DATA_DIR" ]; then
@@ -197,7 +197,7 @@ echo
 # ============================================================================
 # STEP 7: Install Command
 # ============================================================================
-echo -e "${BLUE}[7/9]${NC} Installing command..."
+echo -e "${BLUE}[7/10]${NC} Installing command..."
 echo
 
 # Create ~/.local/bin if it doesn't exist
@@ -227,9 +227,85 @@ fi
 echo
 
 # ============================================================================
-# STEP 8: Install Systemd Service
+# STEP 8: Find Claude Project Directory
 # ============================================================================
-echo -e "${BLUE}[8/9]${NC} Installing systemd service..."
+echo -e "${BLUE}[8/10]${NC} Finding Claude project directory..."
+echo
+
+# The daemon needs to run from a Claude project directory to access /usage command
+# Find existing Claude projects by decoding ~/.claude/projects/* directory names
+CLAUDE_PROJECTS_DIR="$HOME/.claude/projects"
+PROJECT_DIR=""
+
+if [ ! -d "$CLAUDE_PROJECTS_DIR" ]; then
+    echo -e "${RED}✗ Error: No Claude projects found${NC}"
+    echo
+    echo "  Claude Usage Tracker requires at least one Claude Code project."
+    echo "  Please run Claude Code at least once from a project directory:"
+    echo
+    echo -e "    ${CYAN}cd <your-project-directory>${NC}"
+    echo -e "    ${CYAN}claude${NC}"
+    echo
+    echo "  Then run the /usage command to verify it works:"
+    echo -e "    ${CYAN}/usage${NC}"
+    echo
+    echo "  After that, re-run this installation script."
+    exit 1
+fi
+
+# Decode project directory names and find first valid one
+# Claude encodes paths like: -home-dev-projects-foo -> /home/dev/projects/foo
+for encoded_dir in "$CLAUDE_PROJECTS_DIR"/*; do
+    if [ -d "$encoded_dir" ]; then
+        dirname=$(basename "$encoded_dir")
+
+        # Skip hidden directories
+        if [[ "$dirname" == .* ]]; then
+            continue
+        fi
+
+        # Decode: -home-dev-projects-foo -> /home/dev/projects/foo
+        if [[ "$dirname" == -* ]]; then
+            decoded_path="/${dirname:1}"  # Remove leading -
+            decoded_path="${decoded_path//-//}"  # Replace - with /
+
+            # Check if the real directory exists
+            if [ -d "$decoded_path" ]; then
+                # Prefer project directories over just /home/username
+                # Skip if it's just the home directory
+                if [[ "$decoded_path" != "$HOME" ]] && [[ "$decoded_path" != /home/* ]] || [[ "$decoded_path" == */projects/* ]]; then
+                    PROJECT_DIR="$decoded_path"
+                    echo -e "${GREEN}✓${NC} Found Claude project: $PROJECT_DIR"
+                    break
+                elif [ -z "$PROJECT_DIR" ]; then
+                    # Fallback to home directory if no better option
+                    PROJECT_DIR="$decoded_path"
+                fi
+            fi
+        fi
+    fi
+done
+
+# If we didn't find a good project, use the fallback or error out
+if [ -z "$PROJECT_DIR" ]; then
+    echo -e "${RED}✗ Error: No valid Claude project directories found${NC}"
+    echo
+    echo "  Claude Usage Tracker requires a Claude Code project directory."
+    echo "  Please run Claude Code at least once:"
+    echo
+    echo -e "    ${CYAN}cd <your-project-directory>${NC}"
+    echo -e "    ${CYAN}claude${NC}"
+    echo
+    exit 1
+fi
+
+echo -e "${GREEN}✓${NC} Using project directory: $PROJECT_DIR"
+echo
+
+# ============================================================================
+# STEP 9: Install Systemd Service
+# ============================================================================
+echo -e "${BLUE}[9/10]${NC} Installing systemd service..."
 echo
 
 mkdir -p "$SERVICE_DIR"
@@ -242,6 +318,8 @@ After=network.target
 
 [Service]
 Type=simple
+WorkingDirectory=$PROJECT_DIR
+Environment="PATH=$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"
 ExecStart=$VENV_DIR/bin/python3 $LIB_DIR/claude_usage_daemon.py
 Restart=always
 RestartSec=10
@@ -261,9 +339,9 @@ echo -e "${GREEN}✓${NC} Service enabled for auto-start on boot"
 echo
 
 # ============================================================================
-# STEP 9: Start Daemon
+# STEP 10: Start Daemon
 # ============================================================================
-echo -e "${BLUE}[9/9]${NC} Starting daemon..."
+echo -e "${BLUE}[10/10]${NC} Starting daemon..."
 echo
 
 # Start the service
