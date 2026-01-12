@@ -52,7 +52,7 @@ VENV_DIR="$LIB_DIR/venv"
 echo
 echo -e "${CYAN}╔════════════════════════════════════════════════════════╗${NC}"
 echo -e "${CYAN}║                                                        ║${NC}"
-echo -e "${CYAN}║         Claude Usage Tracker v1.0.6                    ║${NC}"
+echo -e "${CYAN}║         Claude Usage Tracker v2.0.0                    ║${NC}"
 echo -e "${CYAN}║         Installation                                   ║${NC}"
 echo -e "${CYAN}║                                                        ║${NC}"
 echo -e "${CYAN}╚════════════════════════════════════════════════════════╝${NC}"
@@ -98,10 +98,10 @@ else
     fi
 fi
 
-# Check Claude CLI
+# Check Claude CLI (for OAuth token only)
 if ! command -v claude &> /dev/null; then
     echo -e "${RED}✗ Error: Claude CLI not found${NC}"
-    echo "  The tracker requires Claude CLI to collect usage data."
+    echo "  The tracker needs Claude Code installed (for OAuth credentials)."
     echo "  Install from: https://github.com/anthropics/claude-code"
     REQUIREMENTS_MET=false
 else
@@ -176,6 +176,7 @@ cp "$SCRIPT_DIR/claude_tui.py" "$LIB_DIR/"
 cp "$SCRIPT_DIR/claude_usage_daemon.py" "$LIB_DIR/"
 cp "$SCRIPT_DIR/session_window_test.py" "$LIB_DIR/"
 cp "$SCRIPT_DIR/claude_data_parser.py" "$LIB_DIR/"
+cp "$SCRIPT_DIR/oauth_usage_api.py" "$LIB_DIR/"
 cp "$SCRIPT_DIR/usage_limits_parser.py" "$LIB_DIR/"
 cp "$SCRIPT_DIR/usage_tracker.py" "$LIB_DIR/"
 cp "$SCRIPT_DIR/version.py" "$LIB_DIR/"
@@ -253,79 +254,29 @@ fi
 echo
 
 # ============================================================================
-# STEP 8: Find Claude Project Directory
+# STEP 8: Verify OAuth Credentials
 # ============================================================================
-echo -e "${BLUE}[8/10]${NC} Finding Claude project directory..."
+echo -e "${BLUE}[8/10]${NC} Verifying Claude OAuth credentials..."
 echo
 
-# The daemon needs to run from a Claude project directory to access /usage command
-# Find existing Claude projects by decoding ~/.claude/projects/* directory names
-CLAUDE_PROJECTS_DIR="$HOME/.claude/projects"
-PROJECT_DIR=""
+# v2.0.0: We no longer need a Claude project directory
+# The OAuth API works from anywhere, using ~/.claude/.credentials.json
 
-if [ ! -d "$CLAUDE_PROJECTS_DIR" ]; then
-    echo -e "${RED}✗ Error: No Claude projects found${NC}"
+CREDENTIALS_FILE="$HOME/.claude/.credentials.json"
+
+if [ ! -f "$CREDENTIALS_FILE" ]; then
+    echo -e "${RED}✗ Error: Claude credentials not found${NC}"
     echo
-    echo "  Claude Usage Tracker requires at least one Claude Code project."
-    echo "  Please run Claude Code at least once from a project directory:"
+    echo "  Claude Usage Tracker v2.0.0 uses OAuth API."
+    echo "  Please log in to Claude Code first:"
     echo
-    echo -e "    ${CYAN}cd <your-project-directory>${NC}"
     echo -e "    ${CYAN}claude${NC}"
     echo
-    echo "  Then run the /usage command to verify it works:"
-    echo -e "    ${CYAN}/usage${NC}"
-    echo
-    echo "  After that, re-run this installation script."
+    echo "  Once logged in, the tracker will automatically access usage data."
     exit 1
 fi
 
-# Decode project directory names and find first valid one
-# Claude encodes paths like: -home-dev-projects-foo -> /home/dev/projects/foo
-for encoded_dir in "$CLAUDE_PROJECTS_DIR"/*; do
-    if [ -d "$encoded_dir" ]; then
-        dirname=$(basename "$encoded_dir")
-
-        # Skip hidden directories
-        if [[ "$dirname" == .* ]]; then
-            continue
-        fi
-
-        # Decode: -home-dev-projects-foo -> /home/dev/projects/foo
-        if [[ "$dirname" == -* ]]; then
-            decoded_path="/${dirname:1}"  # Remove leading -
-            decoded_path="${decoded_path//-//}"  # Replace - with /
-
-            # Check if the real directory exists
-            if [ -d "$decoded_path" ]; then
-                # Prefer project directories over just /home/username
-                # Skip if it's just the home directory
-                if [[ "$decoded_path" != "$HOME" ]] && [[ "$decoded_path" != /home/* ]] || [[ "$decoded_path" == */projects/* ]]; then
-                    PROJECT_DIR="$decoded_path"
-                    echo -e "${GREEN}✓${NC} Found Claude project: $PROJECT_DIR"
-                    break
-                elif [ -z "$PROJECT_DIR" ]; then
-                    # Fallback to home directory if no better option
-                    PROJECT_DIR="$decoded_path"
-                fi
-            fi
-        fi
-    fi
-done
-
-# If we didn't find a good project, use the fallback or error out
-if [ -z "$PROJECT_DIR" ]; then
-    echo -e "${RED}✗ Error: No valid Claude project directories found${NC}"
-    echo
-    echo "  Claude Usage Tracker requires a Claude Code project directory."
-    echo "  Please run Claude Code at least once:"
-    echo
-    echo -e "    ${CYAN}cd <your-project-directory>${NC}"
-    echo -e "    ${CYAN}claude${NC}"
-    echo
-    exit 1
-fi
-
-echo -e "${GREEN}✓${NC} Using project directory: $PROJECT_DIR"
+echo -e "${GREEN}✓${NC} Found Claude OAuth credentials"
 echo
 
 # ============================================================================
@@ -353,7 +304,7 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=$PROJECT_DIR
+WorkingDirectory=%h
 Environment="PATH=$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"
 ExecStart=$EXEC_START_CMD
 Restart=always
