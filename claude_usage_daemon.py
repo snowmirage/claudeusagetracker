@@ -185,15 +185,30 @@ class ClaudeUsageDaemon:
             limits = self.limits_parser.get_current_limits()
 
             # Log what we got from parser (debug level)
-            self.logger.debug(f"Parser returned session={limits.session}, extra={limits.extra}")
+            self.logger.debug(f"Parser returned session={limits.session}, extra={limits.extra}, plan={limits.plan}")
 
             # Build data record with ALL captured fields
             now = datetime.now()
             data = {
                 "timestamp": now.isoformat(),
                 "session": None,
-                "extra": None
+                "extra": None,
+                "plan": None,
+                "weekly": None,
+                "weekly_opus": None,
+                "weekly_sonnet": None
             }
+
+            # Capture plan information
+            if limits.plan:
+                data["plan"] = {
+                    "display_name": limits.plan.display_name,
+                    "tier": limits.plan.tier,
+                    "session_token_limit": limits.plan.session_token_limit,
+                    "has_max": limits.plan.has_max,
+                    "has_pro": limits.plan.has_pro,
+                    "organization_type": limits.plan.organization_type
+                }
 
             # Capture session data
             if limits.session:
@@ -207,6 +222,31 @@ class ClaudeUsageDaemon:
                     "reset_time": limits.session.reset_time,
                     "reset_timezone": limits.session.reset_timezone,
                     "calculated_start_time": session_start.isoformat() if session_start else None
+                }
+
+            # Capture weekly limits (Max plans only)
+            if limits.weekly:
+                data["weekly"] = {
+                    "percent_used": limits.weekly.percent_used,
+                    "reset_time": limits.weekly.reset_time,
+                    "reset_timezone": limits.weekly.reset_timezone,
+                    "limit_type": limits.weekly.limit_type
+                }
+
+            if limits.weekly_opus:
+                data["weekly_opus"] = {
+                    "percent_used": limits.weekly_opus.percent_used,
+                    "reset_time": limits.weekly_opus.reset_time,
+                    "reset_timezone": limits.weekly_opus.reset_timezone,
+                    "limit_type": limits.weekly_opus.limit_type
+                }
+
+            if limits.weekly_sonnet:
+                data["weekly_sonnet"] = {
+                    "percent_used": limits.weekly_sonnet.percent_used,
+                    "reset_time": limits.weekly_sonnet.reset_time,
+                    "reset_timezone": limits.weekly_sonnet.reset_timezone,
+                    "limit_type": limits.weekly_sonnet.limit_type
                 }
 
             # Capture extra usage data

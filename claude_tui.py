@@ -25,9 +25,9 @@ from version import __version__, __title__, __description__
 class SessionLimits(Static):
     """Display session limits like /usage command."""
 
-    # Pro plan limits (can be configured)
-    SESSION_TOKEN_LIMIT = 44000  # 5-hour rolling window for Pro
-    EXTRA_USAGE_LIMIT = 50.00    # $50 monthly limit
+    # Default limits (will be overridden by plan detection)
+    DEFAULT_SESSION_TOKEN_LIMIT = 44000  # Pro plan default
+    DEFAULT_EXTRA_USAGE_LIMIT = 50.00    # Pro plan default
 
     # Daemon data directory
     DAEMON_DATA_DIR = Path.home() / ".claudeusagetracker"
@@ -40,6 +40,9 @@ class SessionLimits(Static):
         # Cache the limits
         self.cached_limits = None
         self.last_fetch_time = None
+        # Plan-specific limits (detected from data)
+        self.session_token_limit = self.DEFAULT_SESSION_TOKEN_LIMIT
+        self.plan_name = "Claude"
 
     def on_mount(self) -> None:
         """Set up auto-refresh."""
@@ -78,6 +81,18 @@ class SessionLimits(Static):
             # Use daemon's cached data
             session_data = daemon_data['session']
             extra_data = daemon_data['extra']
+            plan_data = daemon_data.get('plan')  # May be None for older daemon data
+            weekly_data = daemon_data.get('weekly')
+            weekly_opus_data = daemon_data.get('weekly_opus')
+            weekly_sonnet_data = daemon_data.get('weekly_sonnet')
+
+            # Detect plan and set limits
+            if plan_data:
+                self.plan_name = plan_data.get('display_name', 'Claude')
+                self.session_token_limit = plan_data.get('session_token_limit', self.DEFAULT_SESSION_TOKEN_LIMIT)
+            else:
+                self.plan_name = "Claude"
+                self.session_token_limit = self.DEFAULT_SESSION_TOKEN_LIMIT
 
             # Parse timestamp
             from datetime import datetime
@@ -93,7 +108,7 @@ class SessionLimits(Static):
             first_line_table = RichTable.grid(expand=True)
             first_line_table.add_column(justify="left")
             first_line_table.add_column(justify="right")
-            first_line_table.add_row("[bold cyan]Current session[/bold cyan]", f"[dim]Last Updated: {time_str}[/dim]")
+            first_line_table.add_row("[bold cyan]Current session (5-hour)[/bold cyan]", f"[dim]Last Updated: {time_str}[/dim]")
             output.append(first_line_table)
 
             bar_len = 40
@@ -102,11 +117,45 @@ class SessionLimits(Static):
             bar = "█" * filled + "░" * (bar_len - filled)
 
             # Calculate token counts
-            session_used = int((session_pct / 100) * self.SESSION_TOKEN_LIMIT)
+            session_used = int((session_pct / 100) * self.session_token_limit)
 
             output.append(f"[cyan]{bar}[/cyan] {session_pct:.0f}% used")
-            output.append(f"[dim]{session_used:,} / {self.SESSION_TOKEN_LIMIT:,} tokens (estimated)[/dim]")
+            output.append(f"[dim]{session_used:,} / {self.session_token_limit:,} tokens (estimated)[/dim]")
             output.append(f"[dim]Resets {session_data['reset_time']} ({session_data['reset_timezone']})[/dim]")
+
+            # Weekly limits (Max plans only)
+            if weekly_data:
+                output.append("")
+                output.append("[bold magenta]Weekly limit (overall)[/bold magenta]")
+
+                weekly_pct = weekly_data['percent_used']
+                filled = int((weekly_pct / 100) * bar_len)
+                bar = "█" * filled + "░" * (bar_len - filled)
+
+                output.append(f"[magenta]{bar}[/magenta] {weekly_pct:.0f}% used")
+                output.append(f"[dim]Resets {weekly_data['reset_time']}[/dim]")
+
+            if weekly_sonnet_data:
+                output.append("")
+                output.append("[bold blue]Weekly Sonnet limit[/bold blue]")
+
+                weekly_pct = weekly_sonnet_data['percent_used']
+                filled = int((weekly_pct / 100) * bar_len)
+                bar = "█" * filled + "░" * (bar_len - filled)
+
+                output.append(f"[blue]{bar}[/blue] {weekly_pct:.0f}% used")
+                output.append(f"[dim]Resets {weekly_sonnet_data['reset_time']}[/dim]")
+
+            if weekly_opus_data:
+                output.append("")
+                output.append("[bold green]Weekly Opus limit[/bold green]")
+
+                weekly_pct = weekly_opus_data['percent_used']
+                filled = int((weekly_pct / 100) * bar_len)
+                bar = "█" * filled + "░" * (bar_len - filled)
+
+                output.append(f"[green]{bar}[/green] {weekly_pct:.0f}% used")
+                output.append(f"[dim]Resets {weekly_opus_data['reset_time']}[/dim]")
 
             output.append("")
 
@@ -127,7 +176,7 @@ class SessionLimits(Static):
 
             panel = Panel(
                 content,
-                title="[bold white]Session Limits (from daemon)",
+                title=f"[bold white]{self.plan_name}",
                 border_style="white"
             )
         else:
