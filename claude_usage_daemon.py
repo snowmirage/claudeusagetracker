@@ -3,13 +3,19 @@
 Claude Usage Daemon - Background data collection service
 
 Runs continuously in the background to:
-1. Poll /usage every 30 seconds
+1. Poll OAuth usage API every 30 seconds
 2. Capture ALL usage data (session %, extra $, reset times, etc.)
 3. Calculate session boundaries and extra usage deltas
 4. Store complete data in ~/.claudeusagetracker/
 
 This allows the TUI to display accurate session vs extra usage
 even when the TUI itself is not running.
+
+v2.0.0 Changes:
+- Now uses Claude's OAuth API (fast, reliable, read-only)
+- No longer spawns 'claude /usage' command (eliminated usage consumption bug)
+- Faster polling (~300ms vs 2-3 seconds)
+- More reliable JSON parsing vs terminal output parsing
 """
 
 import os
@@ -175,7 +181,7 @@ class ClaudeUsageDaemon:
             Dictionary with all captured data, or None if failed
         """
         try:
-            # Get usage limits via pexpect
+            # Get usage limits via OAuth API
             limits = self.limits_parser.get_current_limits()
 
             # Log what we got from parser (debug level)

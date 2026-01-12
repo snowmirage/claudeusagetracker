@@ -1,10 +1,12 @@
 # Core dependencies
-selenium>=4.16.0
-webdriver-manager>=4.0.0
-requests>=2.31.0
-pexpect>=4.9.0
-pytz>=2024.1
+requests>=2.31.0    # For OAuth API calls
+pytz>=2024.1        # For timezone handling
 
 # For TUI implementation
-textual>=0.47.0
-rich>=13.7.0
+textual>=0.47.0     # Terminal UI framework
+rich>=13.7.0        # Rich text formatting
+
+# v2.0.0 Changes:
+# - Removed pexpect (no longer spawning 'claude /usage' command)
+# - Removed selenium/webdriver-manager (OAuth API approach, no web scraping)
+# - Now uses Claude's OAuth API for fast, reliable usage monitoring

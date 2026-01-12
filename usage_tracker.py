@@ -27,10 +27,9 @@ class ClaudeUsageTracker:
         return self.parser.get_usage_summary()
 
     def get_overall_limits(self) -> UsageLimits:
-        """Get overall plan limits (requires manual /usage check for now)."""
-        # For now, this returns empty - user should check /usage manually
-        # In the TUI, we'll display instructions to run /usage
-        return UsageLimits()
+        """Get overall plan limits via OAuth API."""
+        # v2.0.0: Now uses OAuth API automatically - no manual steps needed
+        return self.limits_parser.get_current_limits()
 
     def get_last_n_days(self, stats: UsageStats, days: int = 7) -> Dict[str, dict]:
         """Get usage data for last N days."""
@@ -132,16 +131,27 @@ class ClaudeUsageTracker:
             else:
                 print(f"   {date_key}: {'No activity':>12}")
 
-        # Overall limits reminder
+        # Overall limits from OAuth API
         print(f"\n" + "=" * 70)
-        print("📊 Overall Plan Limits")
+        print("📊 Overall Plan Limits (via OAuth API)")
         print("=" * 70)
-        print("\nTo check your current session and extra usage limits:")
-        print("   Run: claude /usage")
-        print("\nThis will show:")
-        print("   • Current session % (5-hour rolling window)")
-        print("   • Extra usage spent ($X / $50.00)")
-        print("   • Reset times")
+
+        limits = self.get_overall_limits()
+
+        if limits.session:
+            print(f"\n⏱️  Current Session (5-hour window):")
+            print(f"   Usage: {limits.session.percent_used}%")
+            print(f"   Resets: {limits.session.reset_time} ({limits.session.reset_timezone})")
+
+        if limits.extra:
+            print(f"\n💳 Extra Usage:")
+            print(f"   Usage: {limits.extra.percent_used}%")
+            print(f"   Spent: ${limits.extra.amount_spent:.2f} / ${limits.extra.amount_limit:.2f}")
+            print(f"   Resets: {limits.extra.reset_date}")
+
+        if not limits.session and not limits.extra:
+            print("\n⚠️  Could not fetch usage limits")
+            print("   Make sure you're logged in to Claude Code")
 
 
 def main():
