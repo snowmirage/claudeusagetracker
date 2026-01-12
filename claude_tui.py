@@ -113,7 +113,7 @@ class SessionLimits(Static):
 
             bar_len = 40
             session_pct = session_data['percent_used']
-            filled = int((session_pct / 100) * bar_len)
+            filled = min(int((session_pct / 100) * bar_len), bar_len)  # Cap at 100%
             bar = "█" * filled + "░" * (bar_len - filled)
 
             # Calculate token counts
@@ -129,7 +129,7 @@ class SessionLimits(Static):
                 output.append("[bold magenta]Weekly limit (overall)[/bold magenta]")
 
                 weekly_pct = weekly_data['percent_used']
-                filled = int((weekly_pct / 100) * bar_len)
+                filled = min(int((weekly_pct / 100) * bar_len), bar_len)  # Cap at 100%
                 bar = "█" * filled + "░" * (bar_len - filled)
 
                 output.append(f"[magenta]{bar}[/magenta] {weekly_pct:.0f}% used")
@@ -140,7 +140,7 @@ class SessionLimits(Static):
                 output.append("[bold blue]Weekly Sonnet limit[/bold blue]")
 
                 weekly_pct = weekly_sonnet_data['percent_used']
-                filled = int((weekly_pct / 100) * bar_len)
+                filled = min(int((weekly_pct / 100) * bar_len), bar_len)  # Cap at 100%
                 bar = "█" * filled + "░" * (bar_len - filled)
 
                 output.append(f"[blue]{bar}[/blue] {weekly_pct:.0f}% used")
@@ -151,7 +151,7 @@ class SessionLimits(Static):
                 output.append("[bold green]Weekly Opus limit[/bold green]")
 
                 weekly_pct = weekly_opus_data['percent_used']
-                filled = int((weekly_pct / 100) * bar_len)
+                filled = min(int((weekly_pct / 100) * bar_len), bar_len)  # Cap at 100%
                 bar = "█" * filled + "░" * (bar_len - filled)
 
                 output.append(f"[green]{bar}[/green] {weekly_pct:.0f}% used")
@@ -164,7 +164,7 @@ class SessionLimits(Static):
 
             bar_len = 40
             extra_pct = extra_data['percent_used']
-            filled = int((extra_pct / 100) * bar_len)
+            filled = min(int((extra_pct / 100) * bar_len), bar_len)  # Cap at 100%
             bar = "█" * filled + "░" * (bar_len - filled)
 
             output.append(f"[yellow]{bar}[/yellow] {extra_pct:.0f}% used")
@@ -963,18 +963,28 @@ class ClaudeUsageTUI(App):
     }
 
     #top_row {
-        height: 12;
+        height: 20;
         dock: top;
+        margin: 0;
+        padding: 0;
     }
 
     #middle_row {
-        min-height: 35;
         height: auto;
+        margin: 0 0 1 0;
+        padding: 0;
     }
 
     Container {
-        border: solid $primary;
-        height: 100%;
+        border: none;
+        height: auto;
+        padding: 0;
+        margin: 0;
+    }
+
+    Static {
+        margin: 0;
+        padding: 0;
     }
     """
 

@@ -52,7 +52,7 @@ VENV_DIR="$LIB_DIR/venv"
 echo
 echo -e "${CYAN}╔════════════════════════════════════════════════════════╗${NC}"
 echo -e "${CYAN}║                                                        ║${NC}"
-echo -e "${CYAN}║         Claude Usage Tracker v2.0.0                    ║${NC}"
+echo -e "${CYAN}║         Claude Usage Tracker v2.0.1                    ║${NC}"
 echo -e "${CYAN}║         Installation                                   ║${NC}"
 echo -e "${CYAN}║                                                        ║${NC}"
 echo -e "${CYAN}╚════════════════════════════════════════════════════════╝${NC}"
