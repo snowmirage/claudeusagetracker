@@ -10,16 +10,203 @@ from textual.reactive import reactive
 from rich.text import Text
 from rich.panel import Panel
 from rich.table import Table
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import json
 import math
 import argparse
 import sys
 
+try:
+    import pytz
+    HAS_PYTZ = True
+except ImportError:
+    HAS_PYTZ = False
+
 from usage_tracker import ClaudeUsageTracker
+
+
+def get_local_timezone():
+    """Get the local timezone.
+
+    Returns:
+        pytz timezone if available, otherwise None
+    """
+    if not HAS_PYTZ:
+        return None
+    try:
+        # Try to get the local timezone name
+        import time
+        if time.daylight:
+            local_tz_name = time.tzname[1]
+        else:
+            local_tz_name = time.tzname[0]
+
+        # Get local timezone offset
+        local_offset = -time.timezone if not time.daylight else -time.altzone
+        local_offset_hours = local_offset // 3600
+
+        # Try common timezone mappings based on offset
+        # This is a fallback - ideally we'd use the system timezone directly
+        return pytz.timezone('localtime') if 'localtime' in pytz.all_timezones else None
+    except:
+        return None
+
+
+def utc_time_to_local(time_str: str, source_tz: str = "UTC") -> tuple[str, str]:
+    """Convert a UTC time string to local timezone.
+
+    Args:
+        time_str: Time string like "2pm", "2:30pm", or ISO format "2026-01-10 02:00pm"
+        source_tz: Source timezone (default "UTC")
+
+    Returns:
+        Tuple of (converted_time_str, local_timezone_abbrev)
+    """
+    if not HAS_PYTZ:
+        return time_str, source_tz
+
+    try:
+        import pytz
+        from datetime import datetime
+
+        # Get UTC and local timezones
+        utc = pytz.UTC
+        local_tz = datetime.now().astimezone().tzinfo
+
+        # Parse the time string
+        now = datetime.now(utc)
+
+        # Check if it's an ISO-like format with date (e.g., "2026-01-10 02:00pm")
+        if len(time_str) > 10 and '-' in time_str[:10]:
+            # Parse ISO-like format
+            try:
+                # Try "YYYY-MM-DD HH:MMam/pm" format
+                dt = datetime.strptime(time_str, "%Y-%m-%d %I:%M%p")
+                dt = utc.localize(dt)
+                local_dt = dt.astimezone(local_tz)
+                local_time_str = local_dt.strftime("%Y-%m-%d %-I:%M%p").lower()
+                local_tz_abbrev = local_dt.strftime("%Z")
+                return local_time_str, local_tz_abbrev
+            except ValueError:
+                pass
+
+        # Parse simple time format like "2pm" or "2:30pm"
+        time_str_clean = time_str.lower().strip()
+
+        # Extract hour and optional minutes
+        if ':' in time_str_clean:
+            # Format: "2:30pm"
+            parts = time_str_clean.replace('am', '').replace('pm', '').split(':')
+            hour = int(parts[0])
+            minute = int(parts[1]) if len(parts) > 1 else 0
+        else:
+            # Format: "2pm"
+            hour = int(''.join(filter(str.isdigit, time_str_clean)))
+            minute = 0
+
+        # Convert to 24-hour format
+        is_pm = 'pm' in time_str_clean
+        is_am = 'am' in time_str_clean
+
+        if is_pm and hour != 12:
+            hour += 12
+        elif is_am and hour == 12:
+            hour = 0
+
+        # Create UTC datetime for today with this time
+        utc_dt = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+        # Convert to local timezone
+        local_dt = utc_dt.astimezone(local_tz)
+
+        # Format back to friendly string
+        if minute == 0:
+            local_time_str = local_dt.strftime("%-I%p").lower()
+        else:
+            local_time_str = local_dt.strftime("%-I:%M%p").lower()
+
+        # Get timezone abbreviation
+        local_tz_abbrev = local_dt.strftime("%Z")
+
+        return local_time_str, local_tz_abbrev
+
+    except Exception as e:
+        # On any error, return original
+        return time_str, source_tz
+
+
+def utc_date_to_local(date_str: str, source_tz: str = "UTC") -> tuple[str, str]:
+    """Convert a UTC date string to local timezone.
+
+    Args:
+        date_str: Date string like "Feb 1" or "Monthly"
+        source_tz: Source timezone (default "UTC")
+
+    Returns:
+        Tuple of (converted_date_str, local_timezone_abbrev)
+    """
+    # "Monthly" is not a specific date, just return as-is
+    if date_str.lower() == "monthly":
+        return date_str, ""
+
+    if not HAS_PYTZ:
+        return date_str, source_tz
+
+    try:
+        import pytz
+        from datetime import datetime
+
+        # Get UTC and local timezones
+        utc = pytz.UTC
+        local_tz = datetime.now().astimezone().tzinfo
+
+        # Try to parse common date formats
+        now = datetime.now()
+        year = now.year
+
+        # Try "Feb 1" or "January 15" format
+        for fmt in ["%b %d", "%B %d"]:
+            try:
+                dt = datetime.strptime(date_str, fmt)
+                dt = dt.replace(year=year)
+                dt = utc.localize(dt)
+                local_dt = dt.astimezone(local_tz)
+                local_date_str = local_dt.strftime("%b %-d")
+                local_tz_abbrev = local_dt.strftime("%Z")
+                return local_date_str, local_tz_abbrev
+            except ValueError:
+                continue
+
+        return date_str, source_tz
+
+    except Exception:
+        return date_str, source_tz
 from claude_data_parser import TokenUsage
 from version import __version__, __title__, __description__
+
+
+class CustomFooter(Static):
+    """Custom footer with keybindings and version."""
+
+    def compose(self) -> ComposeResult:
+        """Compose footer with left and right content."""
+        from rich.table import Table as RichTable
+
+        # Create a table with left and right columns
+        table = RichTable.grid(expand=True)
+        table.add_column(justify="left")
+        table.add_column(justify="right")
+
+        # Left side: keybindings
+        bindings = "Q: Quit | H: Hide/Show Chart | D: Toggle Display | ↑/↓: Scroll | +/-: Adjust Days"
+
+        # Right side: version
+        version = f"v{__version__}"
+
+        table.add_row(bindings, version)
+
+        yield Static(table)
 
 
 class SessionLimits(Static):
@@ -94,11 +281,13 @@ class SessionLimits(Static):
                 self.plan_name = "Claude"
                 self.session_token_limit = self.DEFAULT_SESSION_TOKEN_LIMIT
 
-            # Parse timestamp
+            # Parse timestamp and convert to local timezone
             from datetime import datetime
             try:
                 dt = datetime.fromisoformat(timestamp)
-                time_str = dt.strftime("%Y-%m-%d %I:%M:%S %p")
+                # Convert to local timezone for display
+                local_dt = dt.astimezone()
+                time_str = local_dt.strftime("%Y-%m-%d %I:%M:%S %p %Z")
             except:
                 time_str = "Unknown"
 
@@ -121,7 +310,12 @@ class SessionLimits(Static):
 
             output.append(f"[cyan]{bar}[/cyan] {session_pct:.0f}% used")
             output.append(f"[dim]{session_used:,} / {self.session_token_limit:,} tokens (estimated)[/dim]")
-            output.append(f"[dim]Resets {session_data['reset_time']} ({session_data['reset_timezone']})[/dim]")
+            # Convert session reset time to local timezone
+            session_reset_local, session_tz_abbrev = utc_time_to_local(
+                session_data['reset_time'],
+                session_data.get('reset_timezone', 'UTC')
+            )
+            output.append(f"[dim]Resets {session_reset_local} ({session_tz_abbrev})[/dim]")
 
             # Weekly limits (Max plans only)
             if weekly_data:
@@ -133,7 +327,12 @@ class SessionLimits(Static):
                 bar = "█" * filled + "░" * (bar_len - filled)
 
                 output.append(f"[magenta]{bar}[/magenta] {weekly_pct:.0f}% used")
-                output.append(f"[dim]Resets {weekly_data['reset_time']}[/dim]")
+                # Convert weekly reset time to local timezone
+                weekly_reset_local, weekly_tz_abbrev = utc_time_to_local(
+                    weekly_data['reset_time'],
+                    weekly_data.get('reset_timezone', 'UTC')
+                )
+                output.append(f"[dim]Resets {weekly_reset_local} ({weekly_tz_abbrev})[/dim]")
 
             if weekly_sonnet_data:
                 output.append("")
@@ -144,7 +343,12 @@ class SessionLimits(Static):
                 bar = "█" * filled + "░" * (bar_len - filled)
 
                 output.append(f"[blue]{bar}[/blue] {weekly_pct:.0f}% used")
-                output.append(f"[dim]Resets {weekly_sonnet_data['reset_time']}[/dim]")
+                # Convert weekly Sonnet reset time to local timezone
+                sonnet_reset_local, sonnet_tz_abbrev = utc_time_to_local(
+                    weekly_sonnet_data['reset_time'],
+                    weekly_sonnet_data.get('reset_timezone', 'UTC')
+                )
+                output.append(f"[dim]Resets {sonnet_reset_local} ({sonnet_tz_abbrev})[/dim]")
 
             if weekly_opus_data:
                 output.append("")
@@ -155,7 +359,12 @@ class SessionLimits(Static):
                 bar = "█" * filled + "░" * (bar_len - filled)
 
                 output.append(f"[green]{bar}[/green] {weekly_pct:.0f}% used")
-                output.append(f"[dim]Resets {weekly_opus_data['reset_time']}[/dim]")
+                # Convert weekly Opus reset time to local timezone
+                opus_reset_local, opus_tz_abbrev = utc_time_to_local(
+                    weekly_opus_data['reset_time'],
+                    weekly_opus_data.get('reset_timezone', 'UTC')
+                )
+                output.append(f"[dim]Resets {opus_reset_local} ({opus_tz_abbrev})[/dim]")
 
             output.append("")
 
@@ -169,7 +378,15 @@ class SessionLimits(Static):
 
             output.append(f"[yellow]{bar}[/yellow] {extra_pct:.0f}% used")
             output.append(f"[dim]${extra_data['amount_spent']:.2f} / ${extra_data['amount_limit']:.2f} spent[/dim]")
-            output.append(f"[dim]Resets {extra_data['reset_date']} ({extra_data['reset_timezone']})[/dim]")
+            # Convert extra usage reset date to local timezone (if applicable)
+            extra_reset_local, extra_tz_abbrev = utc_date_to_local(
+                extra_data['reset_date'],
+                extra_data.get('reset_timezone', 'UTC')
+            )
+            if extra_tz_abbrev:
+                output.append(f"[dim]Resets {extra_reset_local} ({extra_tz_abbrev})[/dim]")
+            else:
+                output.append(f"[dim]Resets {extra_reset_local}[/dim]")
 
             # Create content group (first item is table, rest are strings)
             content = Group(*output)
@@ -796,8 +1013,8 @@ class DailyUsageChartDots(Static):
 
         lines = []
 
-        # Legend with timestamp on same line
-        refresh_time = self.last_refresh.strftime("%Y-%m-%d %I:%M:%S %p") if self.last_refresh else "Never"
+        # Legend with timestamp on same line (in local timezone)
+        refresh_time = self.last_refresh.astimezone().strftime("%Y-%m-%d %I:%M:%S %p %Z") if self.last_refresh else "Never"
         first_line_table = RichTable.grid(expand=True)
         first_line_table.add_column(justify="left")
         first_line_table.add_column(justify="right")
@@ -986,10 +1203,22 @@ class ClaudeUsageTUI(App):
         margin: 0;
         padding: 0;
     }
+
+    CustomFooter {
+        dock: bottom;
+        height: 1;
+        background: $panel;
+        color: $text;
+    }
+
+    #middle_row.hidden {
+        display: none;
+    }
     """
 
     BINDINGS = [
         ("q", "quit", "Quit"),
+        ("h", "toggle_chart", "Hide/Show Chart"),
         ("d", "toggle_display", "Toggle Display Mode"),
         ("up", "scroll_backward", "Newer Dates"),
         ("down", "scroll_forward", "Older Dates"),
@@ -1010,7 +1239,12 @@ class ClaudeUsageTUI(App):
         with Horizontal(id="middle_row"):
             yield DailyUsageChartDots()
 
-        yield Footer()
+        yield CustomFooter()
+
+    def action_toggle_chart(self) -> None:
+        """Toggle visibility of the daily usage chart."""
+        middle_row = self.query_one("#middle_row")
+        middle_row.toggle_class("hidden")
 
     def action_toggle_display(self) -> None:
         """Toggle display mode between tokens and cost."""
